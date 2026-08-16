@@ -15,23 +15,14 @@ jobs:
     runs-on: ubuntu-22.04
 
     outputs:
-      FRIDA_VERSION: ${{ steps.pullFridaLatestRelease.outputs.FRIDA_VERSION }}
+      FRIDA_VERSION: ${{ steps.setVersion.outputs.FRIDA_VERSION }}
       ALREADY_RELEASE: ${{ steps.checkReleaseVersion.outputs.ALREADY_RELEASE }}
     steps:
-      - name: Pull Frida Latest Release
-        id: pullFridaLatestRelease
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{secrets.GITHUB_TOKEN}}
-          script: |
-            const releaseResponse = await github.rest.repos.getLatestRelease({
-              owner: 'frida',
-              repo: 'frida',
-            })
-            const {
-              data: { tag_name: ver }
-            } = releaseResponse;
-            core.setOutput('FRIDA_VERSION', ver);
+      # 直接固定版本号为 17.16.4
+      - name: Set Frida Version
+        id: setVersion
+        run: |
+          echo "FRIDA_VERSION=17.16.4" >> $GITHUB_OUTPUT
 
       - name: Split Repository Name
         id: split_name
@@ -48,7 +39,7 @@ jobs:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
             try {
-              const releaseVersion = '${{ steps.pullFridaLatestRelease.outputs.FRIDA_VERSION }}'
+              const releaseVersion = '${{ steps.setVersion.outputs.FRIDA_VERSION }}'
               const releaseResponse = await github.rest.repos.getReleaseByTag({
                 owner: '${{ steps.split_name.outputs.owner }}',
                 repo: '${{ steps.split_name.outputs.repo }}',
@@ -57,7 +48,7 @@ jobs:
               const {
                 data: { tag_name: ver }
               } = releaseResponse;
-              if (ver == '${{ steps.pullFridaLatestRelease.outputs.FRIDA_VERSION }}'){
+              if (ver == '${{ steps.setVersion.outputs.FRIDA_VERSION }}'){
                   if ( ${{ ( github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}){
                     core.setOutput('ALREADY_RELEASE', '2');
                   } else {
@@ -80,7 +71,7 @@ jobs:
         if: ${{ steps.checkReleaseVersion.outputs.ALREADY_RELEASE == '2' }}
         uses: dev-drprasad/delete-tag-and-release@v1.0
         with:
-          tag_name: ${{ steps.pullFridaLatestRelease.outputs.FRIDA_VERSION }}
+          tag_name: ${{ steps.setVersion.outputs.FRIDA_VERSION }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           delete_release: true
 
@@ -147,17 +138,27 @@ jobs:
         export ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}
         echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
         
+        # 克隆 Frida 仓库（完整 clone，因为需要 checkout 到特定 tag）
         git clone --recurse-submodules https://github.com/frida/frida
         cd frida
+        # 切换到指定的版本 17.16.4
+        git checkout 17.16.4
+        # 更新子模块到该版本对应的提交
+        git submodule update --recursive
+        
+        # 应用 patch（如果 patch 基于此版本制作）
         for path in ../patches/*
         do
           name=$(basename $path)
           real=$(realpath $path)
           echo "Apply patches in $real to frida/subprojects/$name"
           cd subprojects/$name
-          git am ../../../patches/$name/*.patch
+          git am ../../../patches/$name/*.patch || {
+            echo "Failed to apply patch for $name, aborting..."
+            git am --abort
+            exit 1
+          }
           cd ../..
-          echo $i
         done
         cd ..
         
