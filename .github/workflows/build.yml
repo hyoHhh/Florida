@@ -13,12 +13,13 @@ on:
 jobs: 
   check_version:
     runs-on: ubuntu-22.04
+    permissions:                               # 👈 新增：赋予删除 Release 所需的写入权限
+      contents: write
 
     outputs:
       FRIDA_VERSION: ${{ steps.setVersion.outputs.FRIDA_VERSION }}
       ALREADY_RELEASE: ${{ steps.checkReleaseVersion.outputs.ALREADY_RELEASE }}
     steps:
-      # 直接固定版本号为 17.16.4
       - name: Set Frida Version
         id: setVersion
         run: |
@@ -138,15 +139,11 @@ jobs:
         export ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}
         echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
         
-        # 克隆 Frida 仓库（完整 clone，因为需要 checkout 到特定 tag）
         git clone --recurse-submodules https://github.com/frida/frida
         cd frida
-        # 切换到指定的版本 17.16.4
         git checkout 17.16.4
-        # 更新子模块到该版本对应的提交
         git submodule update --recursive
         
-        # 应用 patch（如果 patch 基于此版本制作）
         for path in ../patches/*
         do
           name=$(basename $path)
@@ -207,7 +204,6 @@ jobs:
     - name: package build result for Android
       shell: bash
       run: |
-        
         gzip build-android-arm/subprojects/frida-core/server/frida-server
         gzip build-android-arm64/subprojects/frida-core/server/frida-server
         gzip build-android-x86/subprojects/frida-core/server/frida-server
@@ -227,7 +223,6 @@ jobs:
         gzip build-android-arm64/subprojects/frida-gum/bindings/gumjs/libfrida-gumjs-1.0.a
         gzip build-android-x86/subprojects/frida-gum/bindings/gumjs/libfrida-gumjs-1.0.a
         gzip build-android-x86_64/subprojects/frida-gum/bindings/gumjs/libfrida-gumjs-1.0.a
-        
 
     - name: Upload android arm frida-server for Florida
       uses: actions/upload-release-asset@v1.0.2
